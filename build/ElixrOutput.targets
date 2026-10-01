@@ -1,0 +1,44 @@
+<Project TreatAsLocalProperty="ElixrRepositoryRoot">
+  <PropertyGroup>
+    <ElixrRepositoryRoot>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..'))</ElixrRepositoryRoot>
+  </PropertyGroup>
+  <UsingTask TaskName="ElixrValidatePaths" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Paths ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+      <AllowedRoots ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+      <AssemblyName ParameterType="System.String" />
+    </ParameterGroup>
+    <Task>
+      <Code Type="Class" Language="cs" Source="$(MSBuildThisFileDirectory)ValidateOutputPaths.cs" />
+    </Task>
+  </UsingTask>
+
+  <!-- Host assemblies come from the Eco installation; other mods and package dependencies remain. -->
+  <Target Name="ElixrCleanOutput" AfterTargets="PostBuildEvent"
+          Condition="'$(OS)' == 'Windows_NT' and '$(ElixrCleanOutput)' == 'true'">
+    <Error Condition="'$(TargetDir)' == '' or '$(TargetName)' == ''"
+           Text="Elixr cleanup requires a nonempty target directory and assembly name." />
+    <PropertyGroup>
+      <_ElixrOutput>$([MSBuild]::NormalizeDirectory('$(TargetDir)'))</_ElixrOutput>
+    </PropertyGroup>
+    <ElixrValidatePaths Paths="$(_ElixrOutput)"
+                        AssemblyName="$(TargetName)"
+                        AllowedRoots="$(ElixrRepositoryRoot)bin;$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', 'bin'))" />
+    <ItemGroup>
+      <_ElixrHostAssembly Include="Eco.Core;Eco.Gameplay;Eco.Modkit;Eco.Mods;Eco.Networking.ENet;Eco.Plugins;Eco.Shared;Eco.Simulation;Eco.Stats;Eco.Tests;Eco.WebServer;Eco.WindowsForms;Eco.World;Eco.WorldGenerator" />
+      <_ElixrSharedMod Include="Eco.EM.Framework" />
+      <_ElixrSharedMod Include="Eco.EM.Artistry" Condition="'$(ElixrStripArtistry)' == 'true'" />
+      <_ElixrRemove Include="@(_ElixrHostAssembly->'$(_ElixrOutput)%(Identity).dll')" />
+      <_ElixrRemove Include="@(_ElixrSharedMod->'$(_ElixrOutput)%(Identity).dll')" />
+      <_ElixrRemove Include="@(_ElixrSharedMod->'$(_ElixrOutput)%(Identity).pdb')" />
+      <_ElixrRemove Include="@(_ElixrSharedMod->'$(_ElixrOutput)%(Identity).xml')" />
+      <_ElixrRemove Include="@(_ElixrSharedMod->'$(_ElixrOutput)%(Identity).deps.json')" />
+      <_ElixrRemove Include="@(_ElixrSharedMod->'$(_ElixrOutput)%(Identity).runtimeconfig.json')" />
+      <_ElixrRemove Include="@(_ElixrSharedMod->'$(_ElixrOutput)%(Identity).dll.config')" />
+      <_ElixrRemove Include="$(_ElixrOutput)$(TargetName).deps.json;$(_ElixrOutput)$(TargetName).runtimeconfig.json;$(_ElixrOutput)$(TargetName).dll.config" />
+    </ItemGroup>
+    <ElixrValidatePaths Paths="@(_ElixrRemove)" AllowedRoots="$(_ElixrOutput)" />
+    <Delete Files="@(_ElixrRemove)" />
+  </Target>
+</Project>

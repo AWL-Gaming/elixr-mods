@@ -3,25 +3,67 @@ name: .NET
 on:
   push:
     branches:
-      - '**'  
+      - '**'
   pull_request:
     branches:
-      - '**'  
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: elixr-native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
 
-    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
+    runs-on: [self-hosted, Windows, X64, awl-ci, awl-ci-windows, awl-eu]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: powershell
+        working-directory: source-${{ github.run_id }}-${{ github.run_attempt }}
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+      DOTNET_NOLOGO: '1'
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v3
+    - uses: actions/checkout@v4
       with:
-        dotnet-version: 8.0.x
+        persist-credentials: false
+        path: source-${{ github.run_id }}-${{ github.run_attempt }}
+    - name: Verify native SDK and use job-local caches
+      run: |
+        $ErrorActionPreference = 'Stop'
+        if ($env:OS -ne 'Windows_NT') { throw 'This job requires native Windows.' }
+        $cli = Join-Path $env:RUNNER_TEMP ('elixr-cli-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+        $packages = Join-Path $env:RUNNER_TEMP ('elixr-packages-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+        New-Item -ItemType Directory -Path $cli,$packages -Force | Out-Null
+        "DOTNET_CLI_HOME=$cli" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "NUGET_PACKAGES=$packages" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        $env:DOTNET_CLI_HOME = $cli
+        dotnet --version
+        if ($LASTEXITCODE -ne 0) { throw 'The pinned .NET 8 SDK is unavailable.' }
+    - name: Check output cleanup and source packaging safety
+      run: |
+        $ErrorActionPreference = 'Stop'
+        & ./build/Test-OutputSafety.ps1
     - name: Restore dependencies
-      run: dotnet restore
-    - name: Build
-      run: dotnet build --no-restore
-    - name: Test
-      run: dotnet test --no-build --verbosity normal
+      run: |
+        dotnet restore 'Full Kit.sln' --disable-parallel
+        if ($LASTEXITCODE -ne 0) { throw 'Restore failed.' }
+    - name: Build all solution projects serially
+      run: |
+        dotnet build 'Full Kit.sln' --no-restore --no-incremental -m:1 -p:BuildInParallel=false
+        if ($LASTEXITCODE -ne 0) { throw 'Build failed.' }
+    - name: Run solution test target
+      run: |
+        dotnet test 'Full Kit.sln' --no-build --no-restore --verbosity normal
+        if ($LASTEXITCODE -ne 0) { throw 'Test target failed.' }

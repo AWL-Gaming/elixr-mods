@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
 		
@@ -92,8 +92,28 @@
 	  <None Include="Tools\ShovelItem.override.cs" />
 	</ItemGroup>
 
-	<Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(OS)' == 'Windows_NT'">
-	  <Exec Command="cd $(SolutionDir)&#xD;&#xA;cd bin&#xD;&#xA;mkdir ModularTools\Mods\UserCode\ModularTools&#xD;&#xA;mkdir ModularTools\Mods\UserCode\AutoGen&#xD;&#xA;mkdir ModularTools\Mods\UserCode\Tools&#xD;&#xA;&#xD;&#xA;(robocopy &quot;$(SolutionDir)9.6\Collaborations\ModularTools\AutoGen&quot; &quot;$(SolutionDir)bin\ModularTools\Mods\UserCode\AutoGen&quot; /s)  ^&amp; IF %25ERRORLEVEL%25 LSS 8 SET ERRORLEVEL = 0&#xD;&#xA;(robocopy &quot;$(SolutionDir)9.6\Collaborations\ModularTools\ModularTools&quot; &quot;$(SolutionDir)bin\ModularTools\Mods\UserCode\ModularTools&quot; /s)  ^&amp; IF %25ERRORLEVEL%25 LSS 8 SET ERRORLEVEL = 0&#xD;&#xA;(robocopy &quot;$(SolutionDir)9.6\Collaborations\ModularTools\Tools&quot; &quot;$(SolutionDir)bin\ModularTools\Mods\UserCode\Tools&quot; /s)  ^&amp; IF %25ERRORLEVEL%25 LSS 8 SET ERRORLEVEL = 0" />
-	</Target>
+	<Import Project="..\..\..\build\ElixrOutput.targets" />
+
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent" Condition="'$(OS)' == 'Windows_NT'">
+    <PropertyGroup>
+      <_ModularPackage>$(ElixrRepositoryRoot)bin\ModularTools\Mods\UserCode\</_ModularPackage>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\AutoGen') or !Exists('$(MSBuildProjectDirectory)\ModularTools') or !Exists('$(MSBuildProjectDirectory)\Tools')"
+           Text="ModularTools packaging requires the current project's three source directories." />
+    <ElixrValidatePaths Paths="$(MSBuildProjectDirectory)\AutoGen;$(MSBuildProjectDirectory)\ModularTools;$(MSBuildProjectDirectory)\Tools" AllowedRoots="$(MSBuildProjectDirectory)" />
+    <ElixrValidatePaths Paths="$(_ModularPackage)" AllowedRoots="$(ElixrRepositoryRoot)bin" />
+    <ItemGroup>
+      <_ModularAutoGen Include="$(MSBuildProjectDirectory)\AutoGen\**\*" />
+      <_ModularSource Include="$(MSBuildProjectDirectory)\ModularTools\**\*" />
+      <_ModularTools Include="$(MSBuildProjectDirectory)\Tools\**\*" />
+    </ItemGroup>
+    <Error Condition="'@(_ModularAutoGen)' == '' or '@(_ModularSource)' == '' or '@(_ModularTools)' == ''"
+           Text="ModularTools packaging refuses an incomplete source tree." />
+    <ElixrValidatePaths Paths="@(_ModularAutoGen);@(_ModularSource);@(_ModularTools)" AllowedRoots="$(MSBuildProjectDirectory)" />
+    <ElixrValidatePaths Paths="@(_ModularAutoGen->'$(_ModularPackage)AutoGen\%(RecursiveDir)%(Filename)%(Extension)');@(_ModularSource->'$(_ModularPackage)ModularTools\%(RecursiveDir)%(Filename)%(Extension)');@(_ModularTools->'$(_ModularPackage)Tools\%(RecursiveDir)%(Filename)%(Extension)')" AllowedRoots="$(ElixrRepositoryRoot)bin" />
+    <Copy SourceFiles="@(_ModularAutoGen)" DestinationFiles="@(_ModularAutoGen->'$(_ModularPackage)AutoGen\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ModularSource)" DestinationFiles="@(_ModularSource->'$(_ModularPackage)ModularTools\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_ModularTools)" DestinationFiles="@(_ModularTools->'$(_ModularPackage)Tools\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>
